@@ -1,4 +1,5 @@
 # -*- coding: utf-8 -*-
+from dataclasses import asdict, dataclass
 import ctypes
 import threading
 import time
@@ -26,6 +27,12 @@ PreferredAppMode = {
 ctypes.windll['uxtheme.dll'][135](PreferredAppMode[dd.theme()])
 
 
+@dataclass
+class Setting:
+    interval: int
+    threshold: int
+
+
 def get_version():
     v = 'test'
     try:
@@ -39,56 +46,95 @@ def get_version():
 class TaskTray:
     def __init__(self):
         self.stop_event = threading.Event()
-
-        self.config_manager = Config(APP_NAME)
+        self.config = Config(APP_NAME)
+        self.interval = DEFAULT_SETTINGS['interval']
+        self.threshold = DEFAULT_SETTINGS['threshold']
         self.exclude_manager = ExcludeList(APP_NAME, default_list=['memcompression', 'svchost.exe'])
+        self.excludes: list = self.exclude_manager.load()
+
+        # トップ3キャッシュ用のリスト（(プロセス名, メモリMB) のタプルを保持）
+        self.top_3_cache = []
 
         image = Image.new('RGB', (64, 64), (45, 45, 45))
         dc = ImageDraw.Draw(image)
         dc.ellipse([2, 2, 62, 62], fill=(255, 127, 0))
 
-        version = get_version()
-        title = f'{APP_NAME} {version}'
-        main_menu = Menu(
-            MenuItem(f'Exit {title}', self.stopApp),
+        self.load_config()
+
+        self.version = get_version()
+        self.title = f'{APP_NAME} {self.version}'
+        menu = Menu(*self.build_menu())
+        self.app = Icon(
+            name=APP_NAME,
+            title=self.title,
+            icon=image,
+            menu=menu,
         )
-        self.app = Icon(name=APP_NAME, title=title, icon=image, menu=main_menu)
+
+    def load_config(self):
+        try:
+            setting = Setting(**self.config.load())
+            self.interval = setting.interval
+            self.threshold = setting.threshold
+        except Exception:
+            pass
+
+    def save_config(self):
+        setting = Setting(
+            interval=self.interval,
+            threshold=self.threshold,
+        )
+        self.config.save(asdict(setting))
+
+    def build_menu(self):
+        items = []
+
+        # lambdaを使わず、明示的な関数を作成してクロージャの罠を回避する
+        def make_exclude_action(process_name):
+            def action(icon, item):
+                self.exclude_manager.add(process_name)
+            return action
+
+        # キャッシュからトップ3プロセスを追加。クリックで除外リストに追加するアクションを設定
+        for name, rss in self.top_3_cache:
+            items.append(MenuItem(f"Exclude {name} ({rss:.1f} MB)", make_exclude_action(name)))
+
+        if items:
+            items.append(Menu.SEPARATOR)
+        items.append(MenuItem(f'Exit {self.title}', self.stopApp))
+        return items
 
     def doMonitor(self):
         while not self.stop_event.is_set():
             begin = time.time()
 
-            settings = self.config_manager.load()
-            if not settings:
-                settings = DEFAULT_SETTINGS.copy()
-                self.config_manager.save(settings)
-
-            try:
-                monitor_interval = float(settings.get('interval', DEFAULT_SETTINGS['interval']))
-            except (ValueError, TypeError):
-                monitor_interval = float(DEFAULT_SETTINGS['interval'])
-
-            try:
-                threshold = float(settings.get('threshold', DEFAULT_SETTINGS['threshold']))
-            except (ValueError, TypeError):
-                threshold = float(DEFAULT_SETTINGS['threshold'])
-
+            self.load_config()
             ign_list = self.exclude_manager.load()
 
             prcs = get_proc_mems()
 
             lines = []
-            for name in sorted(prcs, key=lambda n: prcs[n], reverse=True):
+            top_3 = []
+
+            # メモリ使用量順にソートして、除外されていない上位3つをキャッシュ用に抽出
+            sorted_prcs = sorted(prcs.items(), key=lambda item: item[1], reverse=True)
+            for name, mem in sorted_prcs:
                 if name not in ign_list:
-                    rss = prcs[name] / (1024 * 1024)
-                    if rss >= threshold:
+                    rss = mem / (1024 * 1024)
+                    if rss >= self.threshold:
                         lines.append(f'{rss:>8.2f} {name}')
+
+                        if len(top_3) < 3:
+                            top_3.append((name, rss))
 
             print('\033[2J\033[H', end='')
             print('\n'.join(lines))
 
+            self.top_3_cache = top_3
+            self.app.menu = Menu(*self.build_menu())
+
             elapsed = time.time() - begin
-            sleep_time = max(0, monitor_interval - elapsed)
+            sleep_time = max(0, self.interval - elapsed)
             if self.stop_event.wait(sleep_time):
                 break
 
