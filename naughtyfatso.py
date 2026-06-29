@@ -4,7 +4,7 @@ import ctypes
 import threading
 import time
 
-from PIL import Image, ImageDraw
+from PIL import Image
 from pystray import Icon, Menu, MenuItem
 import darkdetect as dd
 
@@ -55,9 +55,7 @@ class TaskTray:
         # トップ3キャッシュ用のリスト（(プロセス名, メモリMB) のタプルを保持）
         self.top_3_cache = []
 
-        image = Image.new('RGB', (64, 64), (45, 45, 45))
-        dc = ImageDraw.Draw(image)
-        dc.ellipse([2, 2, 62, 62], fill=(255, 127, 0))
+        image = Image.open(resource_path('Assets/sample.ico'))
 
         self.load_config()
 
