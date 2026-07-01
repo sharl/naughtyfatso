@@ -47,7 +47,6 @@ jobs:
             "--noconsole" `
             "--icon=Assets/sample.ico" `
             "--exclude-module=PIL.ImageCms" `
-            "--exclude-module=PIL.ImageFilter" `
             "--exclude-module=PIL.ImageMath" `
             "--exclude-module=PIL.ImageMorph" `
             "--exclude-module=PIL.ImageTk" `
