@@ -5,7 +5,7 @@ import gc
 import threading
 import time
 
-from PIL import Image
+from PIL import Image, ImageEnhance
 from psutil import virtual_memory
 from pystray import Icon, Menu, MenuItem
 import darkdetect as dd
@@ -66,7 +66,8 @@ class TaskTray:
         # トップ3キャッシュ用のリスト（(プロセス名, メモリMB) のタプルを保持）
         self.top_3_cache = []
 
-        image = Image.open(resource_path('Assets/sample.ico'))
+        self.icon_image = Image.open(resource_path('Assets/sample.ico'))
+        self.dimm_image = ImageEnhance.Brightness(self.icon_image).enhance(0.5).convert('L')
 
         self.load_config()
 
@@ -76,7 +77,7 @@ class TaskTray:
         self.app = Icon(
             name=APP_NAME,
             title=self.title,
-            icon=image,
+            icon=self.icon_image,
             menu=menu,
         )
 
@@ -225,6 +226,10 @@ class TaskTray:
             print('\n'.join(lines))
 
             self.top_3_cache = top_3
+            if self.top_3_cache:
+                self.app.icon = self.icon_image
+            else:
+                self.app.icon = self.dimm_image
             self.app.menu = Menu(*self.build_menu())
 
             elapsed = time.time() - begin
