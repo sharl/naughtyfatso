@@ -6,8 +6,8 @@ Naughty Fatso is silently gobbling up your memory, sigh
 
 ## Configurations
 
-~\.config\NaughtyFatso\config.json
-~\.config\NaughtyFatso\list.txt
+- ~\.config\NaughtyFatso\config.json
+- ~\.config\NaughtyFatso\list.txt
 
 ## Run
 
