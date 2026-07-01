@@ -51,7 +51,9 @@ class TaskTray:
         self.config = Config(APP_NAME)
         self.interval = DEFAULT_SETTINGS['interval']
         self.threshold = DEFAULT_SETTINGS['threshold']
-        self.exclude_manager = ExcludeList(APP_NAME, default_list=['memcompression', 'svchost.exe'])
+        self.exclude_manager = ExcludeList(APP_NAME, default_list=[APP_NAME.lower() + '.exe',
+                                                                   'memcompression',
+                                                                   'svchost.exe'])
         self.excludes: list = self.exclude_manager.load()
 
         self.stop_naughty_event = threading.Event()
