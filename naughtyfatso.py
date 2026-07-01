@@ -45,7 +45,7 @@ def get_version():
 
 class TaskTray:
     def __init__(self):
-        self.stop_event = threading.Event()
+        self.stop_monitor_event = threading.Event()
         self.config = Config(APP_NAME)
         self.interval = DEFAULT_SETTINGS['interval']
         self.threshold = DEFAULT_SETTINGS['threshold']
@@ -85,7 +85,29 @@ class TaskTray:
         self.config.save(asdict(setting))
 
     def build_menu(self):
-        items = []
+        interval_submenu = []
+        for interval in [5, 30, 60]:
+            interval_submenu.append(
+                MenuItem(
+                    f'{interval}',
+                    self.set_interval,
+                    checked=lambda x: self.interval == int(str(x))
+                ),
+            )
+        threshold_submenu = []
+        for th in range(256, 2048 + 1, 256):
+            threshold_submenu.append(
+                MenuItem(
+                    f'{th} MB',
+                    self.set_threshold,
+                    checked=lambda x: self.threshold == int(str(x).split()[0])
+                ),
+            )
+        items = [
+            MenuItem('Interval', Menu(*interval_submenu)),
+            MenuItem('Threshold', Menu(*threshold_submenu)),
+            Menu.SEPARATOR,
+        ]
 
         # lambdaを使わず、明示的な関数を作成してクロージャの罠を回避する
         def make_exclude_action(process_name):
@@ -102,8 +124,22 @@ class TaskTray:
         items.append(MenuItem(f'Exit {self.title}', self.stopApp))
         return items
 
+    def set_interval(self, _, item):
+        # item: MenuItem('30')
+        interval = int(str(item))
+        self.interval = interval
+        self.save_config()
+        self.restart_monitor(f'set interval to {interval}')
+
+    def set_threshold(self, _, item):
+        # item: MenuItem('256 MB')
+        threshold = int(str(item).split()[0])
+        self.threshold = threshold
+        self.save_config()
+        self.restart_monitor(f'set threshold to {threshold}')
+
     def doMonitor(self):
-        while not self.stop_event.is_set():
+        while not self.stop_monitor_event.is_set():
             begin = time.time()
 
             self.load_config()
@@ -133,18 +169,24 @@ class TaskTray:
 
             elapsed = time.time() - begin
             sleep_time = max(0, self.interval - elapsed)
-            if self.stop_event.wait(sleep_time):
+            if self.stop_monitor_event.wait(sleep_time):
                 break
 
+    def restart_monitor(self, reason=None):
+        if reason:
+            print(reason)
+        self.stop_monitor_event.set()
+        time.sleep(1)
+        self.stop_monitor_event.clear()
+        threading.Thread(target=self.doMonitor).start()
+
     def stopApp(self):
-        self.stop_event.set()
+        self.stop_monitor_event.set()
         self.app.stop()
 
     def runApp(self):
-        self.stop_event.clear()
-
-        threading.Thread(target=self.doMonitor).start()
-
+        self.stop_monitor_event.clear()
+        self.restart_monitor()
         self.app.run()
 
 
