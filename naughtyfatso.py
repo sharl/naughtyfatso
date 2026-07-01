@@ -48,12 +48,16 @@ def get_version():
 class TaskTray:
     def __init__(self):
         self.stop_monitor_event = threading.Event()
+        self.monitor_thread = None
         self.config = Config(APP_NAME)
         self.interval = DEFAULT_SETTINGS['interval']
         self.threshold = DEFAULT_SETTINGS['threshold']
-        self.exclude_manager = ExcludeList(APP_NAME, default_list=[APP_NAME.lower() + '.exe',
-                                                                   'memcompression',
-                                                                   'svchost.exe'])
+        exclude_defaults = [
+            APP_NAME.lower() + '.exe',
+            'memcompression',
+            'svchost.exe'
+        ]
+        self.exclude_manager = ExcludeList(APP_NAME, default_list=exclude_defaults)
         self.excludes: list = self.exclude_manager.load()
 
         self.stop_naughty_event = threading.Event()
@@ -228,21 +232,28 @@ class TaskTray:
             if self.stop_monitor_event.wait(sleep_time):
                 break
 
+    def _start_monitor(self):
+        self.stop_monitor_event.clear()
+        self.monitor_thread = threading.Thread(target=self.doMonitor, daemon=True)
+        self.monitor_thread.start()
+
+    def _stop_monitor(self):
+        self.stop_monitor_event.set()
+        if self.monitor_thread is not None and self.monitor_thread.is_alive():
+            self.monitor_thread.join()
+
     def restart_monitor(self, reason=None):
         if reason:
             print(reason)
-        self.stop_monitor_event.set()
-        time.sleep(1)
-        self.stop_monitor_event.clear()
-        threading.Thread(target=self.doMonitor).start()
+        self._stop_monitor()
+        self._start_monitor()
 
     def stopApp(self):
-        self.stop_monitor_event.set()
+        self._stop_monitor()
         self.app.stop()
 
     def runApp(self):
-        self.stop_monitor_event.clear()
-        self.restart_monitor()
+        self._start_monitor()
         self.app.run()
 
 
