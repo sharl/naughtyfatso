@@ -1,10 +1,12 @@
 # -*- coding: utf-8 -*-
 from dataclasses import asdict, dataclass
 import ctypes
+import gc
 import threading
 import time
 
 from PIL import Image
+from psutil import virtual_memory
 from pystray import Icon, Menu, MenuItem
 import darkdetect as dd
 
@@ -51,6 +53,9 @@ class TaskTray:
         self.threshold = DEFAULT_SETTINGS['threshold']
         self.exclude_manager = ExcludeList(APP_NAME, default_list=['memcompression', 'svchost.exe'])
         self.excludes: list = self.exclude_manager.load()
+
+        self.stop_naughty_event = threading.Event()
+        self.lock = threading.Lock()
 
         # トップ3キャッシュ用のリスト（(プロセス名, メモリMB) のタプルを保持）
         self.top_3_cache = []
@@ -104,6 +109,7 @@ class TaskTray:
                 ),
             )
         items = [
+            MenuItem(self.title, self.on_icon_clicked, default=True, visible=True),
             MenuItem('Interval', Menu(*interval_submenu)),
             MenuItem('Threshold', Menu(*threshold_submenu)),
             Menu.SEPARATOR,
@@ -121,7 +127,7 @@ class TaskTray:
 
         if items:
             items.append(Menu.SEPARATOR)
-        items.append(MenuItem(f'Exit {self.title}', self.stopApp))
+        items.append(MenuItem('Exit', self.stopApp))
         return items
 
     def set_interval(self, _, item):
@@ -137,6 +143,54 @@ class TaskTray:
         self.threshold = threshold
         self.save_config()
         self.restart_monitor(f'set threshold to {threshold}')
+
+    def on_icon_clicked(self):
+        if self.lock.acquire(blocking=False):
+            threading.Thread(target=self.beNaughty, daemon=True).start()
+        else:
+            self.stop_naughty_event.set()
+
+    def beNaughty(self):
+        self.stop_naughty_event.clear()
+
+        # 16GB未満は 300MB
+        MAX_CHUNK_SIZE = 300 * 1024 * 1024
+        max_chunk_size = MAX_CHUNK_SIZE
+        # 上限の決定
+        t = virtual_memory().total
+        if t > 31 * 1024 * 1024 * 1024:                 # 31GB以上
+            max_chunk_size = 1.5 * 1024 * 1024 * 1024   # 上限1.5GB
+        elif t > 15 * 1024 * 1024 * 1024:               # 15GB以上
+            max_chunk_size = 700 * 1024 * 1024          # 上限700MB
+
+        hog = []
+        try:
+            while not self.stop_naughty_event.is_set():
+                m = virtual_memory()
+                t = m.total
+                u = m.used
+                p = 100 * u / t
+                if p >= 98.0:
+                    break
+
+                chunk_size = min(max_chunk_size, (t - u) / 2)
+                chunk_size = max(chunk_size, MAX_CHUNK_SIZE)
+
+                print(f'{p:.2f} {int(chunk_size / 1024 / 1024)} MB')
+                hog.append(b'x' * int(chunk_size))
+
+                if self.stop_naughty_event.wait(timeout=0.01):
+                    break
+
+            # induce swap out safely
+            if not self.stop_naughty_event.is_set():
+                self.stop_naughty_event.wait(timeout=3.0)
+
+        finally:
+            hog.clear()
+            del hog
+            gc.collect()
+            self.lock.release()
 
     def doMonitor(self):
         while not self.stop_monitor_event.is_set():
