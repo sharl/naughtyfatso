@@ -199,6 +199,8 @@ class TaskTray:
             gc.collect()
             self.lock.release()
 
+        self.restart_monitor('gobbled up')
+
     def doMonitor(self):
         while not self.stop_monitor_event.is_set():
             begin = time.time()
