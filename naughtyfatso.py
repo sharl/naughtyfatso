@@ -229,8 +229,11 @@ class TaskTray:
 
             self.top_3_cache = top_3
             if self.top_3_cache:
+                exe, rss = self.top_3_cache[0]
+                self.app.title = f'{self.title}\n\n{exe} {rss:.1f} / {self.threshold}'
                 self.app.icon = self.icon_image
             else:
+                self.app.title = self.title
                 self.app.icon = self.dimm_image
             self.app.menu = Menu(*self.build_menu())
 
