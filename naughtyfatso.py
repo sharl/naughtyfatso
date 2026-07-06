@@ -157,6 +157,10 @@ class TaskTray:
         else:
             self.stop_naughty_event.set()
 
+    def get_memory_info(self) -> tuple[int, int]:
+        m = virtual_memory()
+        return m.total, m.used
+
     def beNaughty(self):
         self.stop_naughty_event.clear()
 
@@ -164,7 +168,7 @@ class TaskTray:
         MAX_CHUNK_SIZE = 300 * 1024 * 1024
         max_chunk_size = MAX_CHUNK_SIZE
         # 上限の決定
-        t = virtual_memory().total
+        t, _ = self.get_memory_info()
         if t > 31 * 1024 * 1024 * 1024:                 # 31GB以上
             max_chunk_size = 1.5 * 1024 * 1024 * 1024   # 上限1.5GB
         elif t > 15 * 1024 * 1024 * 1024:               # 15GB以上
@@ -173,9 +177,7 @@ class TaskTray:
         hog = []
         try:
             while not self.stop_naughty_event.is_set():
-                m = virtual_memory()
-                t = m.total
-                u = m.used
+                t, u = self.get_memory_info()
                 p = 100 * u / t
                 if p >= 98.0:
                     break
@@ -219,22 +221,26 @@ class TaskTray:
                 if name not in ign_list:
                     rss = mem / (1024 * 1024)
                     if rss >= self.threshold:
-                        lines.append(f'{rss:>8.2f} {name}')
+                        lines.append(f'{rss:>10.4f} {name}')
 
                         if len(top_3) < 3:
                             top_3.append((name, rss))
 
             print('\033[2J\033[H', end='')
+            print(time.asctime())
             print('\n'.join(lines))
 
             self.top_3_cache = top_3
+            t, u = self.get_memory_info()
+            p = f'{100 * u / t:.2f}%'
+            lines = [f'{self.title} {p}']
             if self.top_3_cache:
                 exe, rss = self.top_3_cache[0]
-                self.app.title = f'{self.title}\n\n{exe} {rss:.1f} / {self.threshold}'
+                lines.append(f'{exe} {rss:.4f} / {self.threshold}')
                 self.app.icon = self.icon_image
             else:
-                self.app.title = self.title
                 self.app.icon = self.dimm_image
+            self.app.title = '\n\n'.join(lines)
             self.app.menu = Menu(*self.build_menu())
 
             elapsed = time.time() - begin
