@@ -204,6 +204,34 @@ class TaskTray:
         self.restart_monitor('gobbled up')
 
     def doMonitor(self):
+        from urllib import request
+        import base64
+        import io
+        import json
+
+        url = f'http://192.168.0.1:19876/segments/{APP_NAME.lower()}'
+        _membuf = io.BytesIO()
+        self.icon_image.resize((48, 48)).save(_membuf, format='png')
+        base64image = base64.b64encode(_membuf.getvalue()).decode('ascii')
+
+        def hekoo_post(url, payload):
+            try:
+                headers = {
+                    'Content-Type': 'application/json',
+                }
+                data = json.dumps(payload).encode('utf-8')
+                req = request.Request(url, method='POST', headers=headers, data=data)
+                request.urlopen(req, timeout=1)
+            except Exception:
+                pass
+
+        def hekoo_delete(url):
+            try:
+                req = request.Request(url, method='DELETE')
+                request.urlopen(req, timeout=1)
+            except Exception:
+                pass
+
         while not self.stop_monitor_event.is_set():
             begin = time.time()
 
@@ -238,8 +266,10 @@ class TaskTray:
                 exe, rss = self.top_3_cache[0]
                 lines.append(f'{exe} {rss:.4f} / {self.threshold}')
                 self.app.icon = self.icon_image
+                hekoo_post(url, {'image': base64image})
             else:
                 self.app.icon = self.dimm_image
+                hekoo_delete(url)
             self.app.title = '\n\n'.join(lines)
             self.app.menu = Menu(*self.build_menu())
 
